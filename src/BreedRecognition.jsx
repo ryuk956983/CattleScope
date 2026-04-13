@@ -23,10 +23,10 @@ const BreedRecognition = () => {
   const [status, setStatus] = useState('Initializing AI System...');
   const [error, setError] = useState(null);
 
-  // AI & Webcam State (Using Refs for non-UI engine state to prevent re-render loops)
+  // AI & Webcam State
   const [isCameraActive, setIsCameraActive] = useState(false);
-  const [predictions, setPredictions] = useState([]); // For Live Feed
-  const [staticPredictions, setStaticPredictions] = useState([]); // For Uploaded Photo
+  const [predictions, setPredictions] = useState([]); 
+  const [staticPredictions, setStaticPredictions] = useState([]); 
   const [devices, setDevices] = useState([]);
   const [currentDeviceIndex, setCurrentDeviceIndex] = useState(0);
 
@@ -67,6 +67,14 @@ const BreedRecognition = () => {
         modelRef.current = await window.tmImage.load(modelURL, metadataURL);
 
         setStatus('Scanning Hardware...');
+        // Permission pre-warm to get labeled device names
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          stream.getTracks().forEach(t => t.stop());
+        } catch (e) {
+          console.warn("Permission pre-warm failed, proceeding anyway.");
+        }
+
         const allDevices = await navigator.mediaDevices.enumerateDevices();
         const videoDevices = allDevices.filter(d => d.kind === "videoinput");
         setDevices(videoDevices);
@@ -83,7 +91,7 @@ const BreedRecognition = () => {
 
     return () => {
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
-      if (webcamRef.current) webcamRef.current.stop();
+      stopCamera();
     };
   }, []);
 
@@ -91,7 +99,6 @@ const BreedRecognition = () => {
   const predict = async () => {
     if (modelRef.current && webcamRef.current && webcamRef.current.canvas) {
       const prediction = await modelRef.current.predict(webcamRef.current.canvas);
-      // Sort live predictions as well for consistency
       const sorted = [...prediction].sort((a, b) => b.probability - a.probability);
       setPredictions(sorted);
     }
@@ -99,8 +106,8 @@ const BreedRecognition = () => {
 
   const loop = async () => {
     if (webcamRef.current) {
-      webcamRef.current.update(); // Update webcam frame
-      await predict(); // Run inference
+      webcamRef.current.update();
+      await predict();
       requestRef.current = window.requestAnimationFrame(loop);
     }
   };
@@ -113,20 +120,31 @@ const BreedRecognition = () => {
     
     try {
       const tmImage = window.tmImage;
-      const deviceId = devices[currentDeviceIndex]?.deviceId;
+      const device = devices[currentDeviceIndex];
       
-      // Match snippet: width, height, flip
-      const newWebcam = new tmImage.Webcam(400, 400, true); 
+      // Determine if it's likely a back camera (environment) or front camera (user)
+      const isBackCamera = device?.label?.toLowerCase().includes('back') || 
+                           device?.label?.toLowerCase().includes('environment');
+
+      // Setup the Teachable Machine Webcam helper
+      // Note: third param is "flip", usually true for front camera, false for back
+      const flip = !isBackCamera;
+      const newWebcam = new tmImage.Webcam(400, 400, flip); 
       
-      // Setup with device constraints
-      const setupOptions = deviceId ? { deviceId: { exact: deviceId } } : {};
-      await newWebcam.setup(setupOptions);
+      // Build constraints based on device choice
+      const constraints = device?.deviceId 
+        ? { deviceId: { exact: device.deviceId } }
+        : { facingMode: 'environment' };
+
+      await newWebcam.setup(constraints); 
       await newWebcam.play();
       
-      // Render to container
+      // Inject the canvas into our DOM container
       if (webcamContainerRef.current) {
         webcamContainerRef.current.innerHTML = "";
         webcamContainerRef.current.appendChild(newWebcam.canvas);
+        
+        // Ensure the canvas fills the container correctly
         newWebcam.canvas.style.width = "100%";
         newWebcam.canvas.style.height = "100%";
         newWebcam.canvas.style.objectFit = "cover";
@@ -139,20 +157,34 @@ const BreedRecognition = () => {
       requestRef.current = window.requestAnimationFrame(loop);
     } catch (err) {
       console.error("Camera Error:", err);
-      setError("Camera Error: Ensure you have granted permissions.");
+      setError("Camera Error: Hardware busy or access denied.");
       setStatus('Ready');
     }
   };
 
   const stopCamera = () => {
-    if (requestRef.current) cancelAnimationFrame(requestRef.current);
+    if (requestRef.current) {
+      cancelAnimationFrame(requestRef.current);
+      requestRef.current = null;
+    }
+    
     if (webcamRef.current) {
+      // Very important: Stop all media tracks manually for mobile compatibility
+      if (webcamRef.current.stream) {
+        webcamRef.current.stream.getTracks().forEach(track => {
+          track.stop();
+          console.log("Track stopped:", track.label);
+        });
+      }
       webcamRef.current.stop();
       webcamRef.current = null;
     }
+    
     setIsCameraActive(false);
     setPredictions([]);
-    if (webcamContainerRef.current) webcamContainerRef.current.innerHTML = "";
+    if (webcamContainerRef.current) {
+      webcamContainerRef.current.innerHTML = "";
+    }
     setStatus('Ready');
   };
 
@@ -160,11 +192,18 @@ const BreedRecognition = () => {
     if (devices.length > 1) {
       const nextIndex = (currentDeviceIndex + 1) % devices.length;
       setCurrentDeviceIndex(nextIndex);
+      
+      // If camera is currently on, restart with the new index
       if (isCameraActive) {
         stopCamera();
-        // Delay allows hardware to release before re-acquisition
-        setTimeout(startCamera, 400); 
+        // Mobile hardware needs a moment to fully release the sensor
+        setTimeout(() => {
+          startCamera();
+        }, 800); 
       }
+    } else {
+      // If only one device reported, try forcing a facingMode toggle
+      setError("Only one camera source detected.");
     }
   };
 
@@ -176,7 +215,7 @@ const BreedRecognition = () => {
       const reader = new FileReader();
       reader.onloadend = () => {
         setUploadPreview(reader.result);
-        setStaticPredictions([]); // Clear old results when new file chosen
+        setStaticPredictions([]);
       };
       reader.readAsDataURL(file);
     }
@@ -193,7 +232,6 @@ const BreedRecognition = () => {
       img.src = uploadPreview;
       img.onload = async () => {
         const results = await modelRef.current.predict(img);
-        // Sort results by probability descending so the highest is at the top
         const sortedResults = [...results].sort((a, b) => b.probability - a.probability);
         setStaticPredictions(sortedResults);
         setIsAnalyzing(false);
@@ -210,9 +248,14 @@ const BreedRecognition = () => {
   };
 
   return (
-    <div className="min-h-screen w-full relative overflow-hidden font-sans flex flex-col items-center p-4 md:p-8text-white">
+    <div className="min-h-screen w-full relative overflow-hidden font-sans flex flex-col items-center p-4 md:p-8 bg-gradient-to-br from-[#1e4620] via-[#3a6321] to-[#c27803] text-white">
+      
+      {/* Background Watermark */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none opacity-5">
+        <h1 className="text-[15vw] font-black tracking-tighter text-white">SPYRAL</h1>
+      </div>
 
-
+      {/* Header */}
       <div className="relative z-10 text-center space-y-2 mb-10">
         <h1 className="text-3xl md:text-4xl font-bold tracking-tight">AI Breed Recognition</h1>
         <p className="opacity-70 text-sm font-medium">Field-ready identification for cattle and buffalo breeds</p>
@@ -220,7 +263,7 @@ const BreedRecognition = () => {
 
       <div className="relative z-10 w-full max-w-6xl space-y-6">
         
-
+        {/* Real-time Status Bar */}
         <div className="bg-black/30 backdrop-blur-xl px-6 py-3 rounded-2xl border border-white/10 flex items-center justify-between shadow-lg">
           <div className="flex items-center gap-3">
             <div className={`w-2.5 h-2.5 rounded-full ${error ? 'bg-red-500' : isCameraActive ? 'bg-green-400 animate-pulse' : 'bg-yellow-400'}`} />
@@ -231,7 +274,6 @@ const BreedRecognition = () => {
           {error && <span className="text-[10px] font-bold text-red-300 uppercase truncate ml-4">{error}</span>}
         </div>
 
-        {/* Top Section: Upload & Results - Added items-start to prevent vertical stretching */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
           {/* Section 1: Image Upload */}
           <div className="bg-white/10 backdrop-blur-xl border border-white/10 rounded-[2.5rem] p-8 flex flex-col shadow-2xl h-full">
@@ -271,6 +313,7 @@ const BreedRecognition = () => {
             </div>
           </div>
 
+          {/* Section 2: Upload Results */}
           <div className="bg-white/10 backdrop-blur-xl border border-white/10 rounded-[2.5rem] p-8 flex flex-col shadow-2xl min-h-full">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
@@ -319,7 +362,7 @@ const BreedRecognition = () => {
           </div>
         </div>
 
-
+        {/* Section 3: Live Analysis */}
         <div className="bg-white/10 backdrop-blur-xl border border-white/10 rounded-[2.5rem] p-8 flex flex-col shadow-2xl">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
@@ -332,14 +375,16 @@ const BreedRecognition = () => {
               <button 
                 onClick={switchCamera}
                 disabled={devices.length <= 1}
-                className="p-2 bg-white/5 rounded-lg hover:bg-white/10 disabled:opacity-20 border border-white/10"
+                className="p-2 bg-white/5 rounded-lg hover:bg-white/10 disabled:opacity-20 border border-white/10 flex items-center gap-2 group transition-all"
+                title="Switch Camera"
               >
-                <RefreshCcw className="w-4 h-4" />
+                <RefreshCcw className="w-4 h-4 group-active:rotate-180 transition-transform duration-500" />
+                <span className="text-[10px] font-bold uppercase hidden sm:inline">Switch Source</span>
               </button>
               <button 
                 onClick={isCameraActive ? stopCamera : startCamera}
                 disabled={!modelRef.current}
-                className={`${isCameraActive ? 'bg-red-500/80' : 'bg-green-500/80'} px-6 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition-all shadow-lg`}
+                className={`${isCameraActive ? 'bg-red-500/80 hover:bg-red-600' : 'bg-green-500/80 hover:bg-green-600'} px-6 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition-all shadow-lg`}
               >
                 {isCameraActive ? <Square className="w-3 h-3 fill-current" /> : <Play className="w-3 h-3 fill-current" />}
                 {isCameraActive ? 'Stop' : 'Start'}
@@ -348,26 +393,27 @@ const BreedRecognition = () => {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-          
-            <div className="relative aspect-square md:aspect-video bg-black/40 rounded-[2rem] overflow-hidden border border-white/10 flex items-center justify-center shadow-inner">
+            {/* Webcam Viewport Container */}
+            <div className="relative aspect-square md:aspect-video bg-black/40 rounded-[2rem] overflow-hidden border border-white/10 flex items-center justify-center shadow-inner min-h-[300px]">
               {!isCameraActive && (
                 <div className="flex flex-col items-center gap-4 opacity-10">
                   <Camera className="w-20 h-20" />
                   <span className="text-xs font-black tracking-[0.3em] uppercase">Sensor Offline</span>
                 </div>
               )}
+              {/* This is the actual container where TM injects the canvas */}
               <div 
                 ref={webcamContainerRef} 
                 className={`w-full h-full transition-opacity duration-1000 ${isCameraActive ? 'opacity-100' : 'opacity-0'}`}
               />
               {isCameraActive && (
-                <div className="absolute top-4 right-4 flex items-center gap-2 bg-red-600 px-3 py-1.5 rounded-full text-[10px] font-black animate-pulse shadow-lg">
+                <div className="absolute top-4 right-4 flex items-center gap-2 bg-red-600 px-3 py-1.5 rounded-full text-[10px] font-black animate-pulse shadow-lg z-10">
                   <div className="w-2 h-2 bg-white rounded-full" /> LIVE AI
                 </div>
               )}
             </div>
 
-          
+            {/* Confidence Levels */}
             <div className="bg-black/20 rounded-[2rem] p-6 border border-white/5">
               <h4 className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 mb-6 flex items-center gap-2">
                 Live Confidence Panel
@@ -398,8 +444,6 @@ const BreedRecognition = () => {
           </div>
         </div>
       </div>
-
-      
 
       <style jsx="true">{`
         .custom-scrollbar::-webkit-scrollbar {
