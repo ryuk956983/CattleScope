@@ -6,7 +6,9 @@ const Navbar = () => {
   return (
    <nav className="relative z-10 flex items-center justify-between px-8 py-6 max-md:text-sm">
         <div className="flex items-center gap-3">
-         
+         <div className='w-20 h-20 grid place-items-center rounded-[100%] overflow-hidden'>
+          <img src="/logo.png" alt="" />
+         </div>
           <div>
             <h1 className="text-xl font-bold leading-tight">CattleScope</h1>
       
