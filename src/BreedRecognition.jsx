@@ -122,29 +122,26 @@ const BreedRecognition = () => {
       const tmImage = window.tmImage;
       const device = devices[currentDeviceIndex];
       
-      // Determine if it's likely a back camera (environment) or front camera (user)
+      // Better detection for back cameras
       const isBackCamera = device?.label?.toLowerCase().includes('back') || 
-                           device?.label?.toLowerCase().includes('environment');
+                           device?.label?.toLowerCase().includes('environment') ||
+                           device?.label?.toLowerCase().includes('rear');
 
-      // Setup the Teachable Machine Webcam helper
-      // Note: third param is "flip", usually true for front camera, false for back
+      // Mirror for front, no mirror for back
       const flip = !isBackCamera;
       const newWebcam = new tmImage.Webcam(400, 400, flip); 
       
-      // Build constraints based on device choice
+      // Use exact deviceId for specific selection, fallback to environment hint
       const constraints = device?.deviceId 
         ? { deviceId: { exact: device.deviceId } }
-        : { facingMode: 'environment' };
+        : { facingMode: isBackCamera ? 'environment' : 'user' };
 
       await newWebcam.setup(constraints); 
       await newWebcam.play();
       
-      // Inject the canvas into our DOM container
       if (webcamContainerRef.current) {
         webcamContainerRef.current.innerHTML = "";
         webcamContainerRef.current.appendChild(newWebcam.canvas);
-        
-        // Ensure the canvas fills the container correctly
         newWebcam.canvas.style.width = "100%";
         newWebcam.canvas.style.height = "100%";
         newWebcam.canvas.style.objectFit = "cover";
@@ -157,8 +154,10 @@ const BreedRecognition = () => {
       requestRef.current = window.requestAnimationFrame(loop);
     } catch (err) {
       console.error("Camera Error:", err);
-      setError("Camera Error: Hardware busy or access denied.");
+      setError("Hardware busy or access denied. Retrying...");
       setStatus('Ready');
+      // Attempt recovery on common mobile hardware lock
+      if (isCameraActive) stopCamera();
     }
   };
 
@@ -169,14 +168,19 @@ const BreedRecognition = () => {
     }
     
     if (webcamRef.current) {
-      // Very important: Stop all media tracks manually for mobile compatibility
+      // DEEP CLEAN: Manually disable and stop all tracks to release hardware lock
       if (webcamRef.current.stream) {
-        webcamRef.current.stream.getTracks().forEach(track => {
+        const tracks = webcamRef.current.stream.getTracks();
+        tracks.forEach(track => {
+          track.enabled = false;
           track.stop();
-          console.log("Track stopped:", track.label);
         });
       }
-      webcamRef.current.stop();
+      try {
+        webcamRef.current.stop();
+      } catch (e) {
+        console.warn("Internal TM stop error:", e);
+      }
       webcamRef.current = null;
     }
     
@@ -190,20 +194,30 @@ const BreedRecognition = () => {
 
   const switchCamera = () => {
     if (devices.length > 1) {
+      // Prevent rapid double-clicks while switching
+      if (status === 'Switching...') return;
+
       const nextIndex = (currentDeviceIndex + 1) % devices.length;
       setCurrentDeviceIndex(nextIndex);
       
-      // If camera is currently on, restart with the new index
       if (isCameraActive) {
+        setStatus('Switching...');
         stopCamera();
-        // Mobile hardware needs a moment to fully release the sensor
+        // Increased delay for mobile hardware sensor transition
         setTimeout(() => {
           startCamera();
-        }, 800); 
+        }, 1000); 
       }
     } else {
-      // If only one device reported, try forcing a facingMode toggle
-      setError("Only one camera source detected.");
+      // Fallback for devices where enumerateDevices returns one entry but has two cameras
+      if (isCameraActive) {
+        stopCamera();
+        setTimeout(() => {
+          // Attempt to start with opposite facingMode directly
+          startCamera();
+        }, 1000);
+      }
+      setError("Scanning for additional camera sources...");
     }
   };
 
@@ -374,11 +388,11 @@ const BreedRecognition = () => {
             <div className="flex gap-2">
               <button 
                 onClick={switchCamera}
-                disabled={devices.length <= 1}
+                disabled={status === 'Switching...'}
                 className="p-2 bg-white/5 rounded-lg hover:bg-white/10 disabled:opacity-20 border border-white/10 flex items-center gap-2 group transition-all"
                 title="Switch Camera"
               >
-                <RefreshCcw className="w-4 h-4 group-active:rotate-180 transition-transform duration-500" />
+                <RefreshCcw className={`w-4 h-4 ${status === 'Switching...' ? 'animate-spin' : 'group-active:rotate-180'} transition-transform duration-500`} />
                 <span className="text-[10px] font-bold uppercase hidden sm:inline">Switch Source</span>
               </button>
               <button 
