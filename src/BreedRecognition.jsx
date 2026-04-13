@@ -408,7 +408,7 @@ const BreedRecognition = () => {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
             {/* Webcam Viewport Container */}
-            <div className="relative aspect-square md:aspect-video bg-black/40 rounded-[2rem] overflow-hidden border border-white/10 flex items-center justify-center shadow-inner min-h-[300px]">
+            <div className="relative aspect-square md:aspect-video bg-black/40 rounded-[2rem] overflow-hidden border border-white/10 flex items-center justify-center shadow-inner min-h-[200px]">
               {!isCameraActive && (
                 <div className="flex flex-col items-center gap-4 opacity-10">
                   <Camera className="w-20 h-20" />
