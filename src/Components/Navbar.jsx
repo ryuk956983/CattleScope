@@ -4,11 +4,9 @@ import { Link } from 'react-router-dom';
 const Navbar = () => {    
     const dropdownRef = useRef(null);
   return (
-   <nav className="relative z-10 flex items-center justify-between px-8 py-6">
+   <nav className="relative z-10 flex items-center justify-between px-8 py-6 max-md:text-sm">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 border-2 border-white/40 rounded-full flex items-center justify-center">
-             <div className="w-6 h-6 border-t-2 border-white rounded-full animate-pulse"></div>
-          </div>
+         
           <div>
             <h1 className="text-xl font-bold leading-tight">CattleScope</h1>
       
