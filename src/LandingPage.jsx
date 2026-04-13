@@ -32,7 +32,7 @@ Quick and accurate AI-powered identification to assist field-level workers acros
           <div className="space-y-3">
             {[
               { icon: <Camera className="w-5 h-5" />, text: "Real-time Analysis" },
-              { icon: <CheckCircle2 className="w-5 h-5" />, text: "95%+ Accuracy" },
+              { icon: <CheckCircle2 className="w-5 h-5" />, text: "90%+ Accuracy" },
               { icon: <Circle className="w-5 h-5" />, text: "BPA Integration" }
             ].map((feature, i) => (
               <div key={i} className="flex items-center gap-3 bg-black/20 backdrop-blur-sm border border-white/5 py-2 px-4 rounded-xl w-fit">
@@ -64,10 +64,10 @@ Quick and accurate AI-powered identification to assist field-level workers acros
               <div className="space-y-3">
                 <div className="flex justify-between text-sm font-semibold opacity-90">
                   <span>Breed Accuracy</span>
-                  <span>95%</span>
+                  <span>90%</span>
                 </div>
                 <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden">
-                  <div className="h-full w-[95%] bg-gradient-to-r from-green-400 to-yellow-400 rounded-full"></div>
+                  <div className="h-full w-[90%] bg-gradient-to-r from-green-400 to-yellow-400 rounded-full"></div>
                 </div>
               </div>
 
