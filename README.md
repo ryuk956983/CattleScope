@@ -1,6 +1,6 @@
 # CattleScope
 
-[![Ask DeepWiki](https://devin.ai/assets/askdeepwiki.png)](https://deepwiki.com/ryuk956983/CattleScope)
+
 
 CattleScope is an AI-powered web application designed for the accurate and rapid identification of cattle and buffalo breeds. Built to assist field-level workers and enthusiasts, it provides real-time analysis via a device's camera or through image uploads, complemented by a comprehensive and searchable breed database.
 
